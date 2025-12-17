@@ -22,12 +22,8 @@ class ModerationPipeline:
         self.segmenter = ViolationSegmenter()
 
     def run(self, image: Image.Image) -> Dict[str, Any]:
-        import logging
-        logger = logging.getLogger("image-moderation")
-        
         cls_result = self.classifier.predict(image)
         possible_violation = cls_result.get("possible_violation", False)
-        logger.info(f"[Pipeline] Classifier result: possible_violation={possible_violation}")
 
         if not possible_violation:
             return {
@@ -37,12 +33,9 @@ class ModerationPipeline:
             }
 
         detections = self.detector.predict(image)
-        logger.info(f"[Pipeline] Detector found {len(detections)} total detections")
         violating_boxes = self._filter_violations(detections)
-        logger.info(f"[Pipeline] Filtered to {len(violating_boxes)} violating boxes")
 
         if not violating_boxes:
-            logger.warning("[Pipeline] No violating boxes found - returning unblurred image")
             return {
                 "status": "SAFE_AFTER_DETECTION",
                 "image": image,
@@ -56,24 +49,17 @@ class ModerationPipeline:
         for det in violating_boxes:
             labels.append(det["label"])
             bbox = det["bbox"]  # [x1, y1, x2, y2]
-            logger.info(f"[Pipeline] Processing violation: {det['label']} at {bbox}")
             mask = self.segmenter.segment(image, bbox)
             full_mask = np.maximum(full_mask, mask)
 
-        mask_sum = np.sum(full_mask)
-        logger.info(f"[Pipeline] Total mask pixels: {mask_sum} (shape: {full_mask.shape})")
-
         if not np.any(full_mask):
-            logger.warning("[Pipeline] Mask is empty - returning unblurred image")
             return {
                 "status": "SAFE_NO_MASK",
                 "image": image,
                 "violations": []
             }
 
-        logger.info(f"[Pipeline] Applying blur to {mask_sum} pixels")
         blurred_image = blur_with_mask(image, full_mask)
-        logger.info(f"[Pipeline] Blur applied successfully")
 
         return {
             "status": "VIOLATION_BLURRED",
