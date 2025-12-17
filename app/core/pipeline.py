@@ -15,7 +15,7 @@ class ModerationPipeline:
     4. Blur - only masked regions
     """
 
-    def __init__(self, output_dir: str = "safe_images"):
+    def __init__(self):
         self.classifier = NSFWClassifier()
         self.detector = ViolationDetector()
         
@@ -42,7 +42,9 @@ class ModerationPipeline:
                 "violations": []
             }
 
-        height, width = image.size[1], image.size[0]
+        # PIL Image.size returns (width, height)
+        # For numpy arrays, we use (height, width) convention
+        width, height = image.size  # width = image.size[0], height = image.size[1]
         full_mask = np.zeros((height, width), dtype=np.uint8)
         labels: List[str] = []
 
@@ -50,6 +52,7 @@ class ModerationPipeline:
             labels.append(det["label"])
             bbox = det["bbox"]  # [x1, y1, x2, y2]
             mask = self.segmenter.segment(image, bbox)
+            # segmenter returns mask with shape (height, width) - same as full_mask
             full_mask = np.maximum(full_mask, mask)
 
         if not np.any(full_mask):
@@ -59,11 +62,12 @@ class ModerationPipeline:
                 "violations": []
             }
 
+        # image is PIL.Image.Image, full_mask is np.ndarray with shape (height, width)
         blurred_image = blur_with_mask(image, full_mask)
 
         return {
             "status": "VIOLATION_BLURRED",
-            "image": blurred_image,
+            "image": blurred_image,  # This is a PIL.Image.Image object
             "violations": sorted(set(labels)),
         }
 
